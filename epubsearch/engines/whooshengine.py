@@ -6,10 +6,14 @@ from whoosh.qparser import QueryParser
 from baseengine import BaseEngine
 import os
 import re
+from whoosh.analysis import LanguageAnalyzer
 
 class WhooshEngine(BaseEngine):
     # whoosh
-    schema = Schema(title=TEXT(stored=True), path=TEXT(stored=True), href=ID(stored=True), cfiBase=TEXT(stored=True), spinePos=TEXT(stored=True), content=TEXT)
+    # Specify arabic analyzer for whoosh
+    # Change experssion to prevent whoosh from splitting words on diacritics
+    my_analyzer = LanguageAnalyzer("ar",expression=ur"[\u0621-\u0669]+")
+    schema = Schema(title=TEXT(stored=True), path=TEXT(stored=True), href=ID(stored=True), cfiBase=TEXT(stored=True), spinePos=TEXT(stored=True), content=TEXT(analyzer=my_analyzer,stored=True))
 
     def open(self):
         try:
@@ -42,7 +46,7 @@ class WhooshEngine(BaseEngine):
         with self.ix.searcher() as searcher:
             results = []
             parsedQuery = QueryParser("content", schema=self.ix.schema).parse(q)
-            hits = searcher.search(parsedQuery, limit=limit)
+            hits = searcher.search(parsedQuery, limit=limit, terms=True)
 
             for hit in hits:
                 item = {}
@@ -52,6 +56,8 @@ class WhooshEngine(BaseEngine):
                 item['title'] = hit["title"].encode("utf-8")
                 item['cfiBase'] = hit["cfiBase"].encode("utf-8")
                 item['spinePos'] = hit["spinePos"].encode("utf-8")
+
+                item['html_highlighted'] = hit.highlights("content",top=100000)
                 results.append(item)
 
             return results
