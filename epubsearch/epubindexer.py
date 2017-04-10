@@ -1,8 +1,26 @@
+# -*- coding: utf-8 -*-
 import importlib
 import sys
 import engines
 from lxml import etree
 import re
+from pyarabic import araby
+
+def human_xpath(element):
+    full_xpath = element.getroottree().getpath(element)
+    xpath = ''
+    human_xpath = ''
+    for i, node in enumerate(full_xpath.split('/')[1:]):
+        xpath += '/' + node
+        element = element.xpath(xpath)[0]
+        namespace, tag = element.tag[1:].split('}', 1)
+        if element.getparent() is not None:
+            nsmap = {'ns': namespace}
+            same_name = element.getparent().xpath('./ns:' + tag, namespaces=nsmap)
+            if len(same_name) > 1:
+                tag += '[{}]'.format(same_name.index(element) + 1)
+        human_xpath += '/' + tag
+    return human_xpath
 
 class EpubIndexer(object):
     epub = False
@@ -27,61 +45,86 @@ class EpubIndexer(object):
 
         self.engine.finished()
 
-    def search(self, q, limit=None):
+    def prepare_results(self, q, matchedList, hit, exact_match):
+        baseitem = {}
+        baseitem['title'] = hit["title"]
+        baseitem['href'] = hit["href"]
+        #baseitem['path'] = hit["path"]
+        # find base of cfi
+        cfiBase = hit['cfiBase'] + "!"
+        r = {}
+        r['results'] = []
+        r['matched_words'] = set()
+        for word in matchedList:
+            word_all_text = "".join(word.itertext())
+            if word_all_text is None: continue
+
+            word_text = etree.tostring(word, encoding="utf-8", method="text", pretty_print=True ).replace('\n', ' ')
+            word_text = " ".join(word_text.split())
+            if exact_match:
+                regex = u"(?<![أ-ي\d])"+ q + u"(?![أ-ي\d])(?![" + u"".join(araby.TASHKEEL) + u"][أ-ي])"
+                all_occurrences = re.finditer(r'('+regex+')' , word_all_text+' ')
+            else:
+                generate_regex_from_query = re.sub(ur'([\u0621-\u064A])', ur'\1[\u064B-\u0652|\u0640]*', q)
+                all_occurrences = re.finditer('('+generate_regex_from_query+')', word_text.decode('utf-8'))
+
+            for word_match in all_occurrences:
+                # copy the base
+                item = baseitem.copy()
+                item['baseCfi'] = cfiBase
+                matched_word_index = ("/1:" + str(word_match.start()))
+                item['cfi'] = getCFI(cfiBase, word) + matched_word_index
+                item['xpath'] = human_xpath(word)
+                # Create highlight snippet in try / except
+                # because I'm not convinced its error free for all
+                # epub texts
+                r['matched_words'].add(word_match.group(1))
+                try:
+                    item['highlight'] = createHighlight(word_text.decode('utf-8'), word_match.start(), word_match.end()) # replace me with above
+                except Exception as e:
+                    print "Exception when creating highlight for query", q
+                    print(e)
+                    print word_text
+                    item['highlight'] = ''
+
+                #item['highlight'] = word.text
+                r['results'].append(item)
+        return r
+
+    def search(self, q, limit=None, exact_match=False):
         rawresults = self.engine.query(q, limit)
         # print len(rawresults)
         r = {}
         r["results"] = []
+        r["matched_words"] = set()
         q = q.lower()
 
         for hit in rawresults:
-            baseitem = {}
-            baseitem['title'] = hit["title"]
-            baseitem['href'] = hit["href"]
-            baseitem['path'] = hit["path"]
-
-            # find base of cfi
-            cfiBase = hit['cfiBase'] + "!"
 
             with open(hit["path"]) as fileobj:
                 tree = etree.parse(fileobj)
-                parsedString = etree.tostring(tree.getroot())
-                # case-insensitive xpath search
-                xpath = './/*[contains(translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz") , "'+ q + '")]'
-                #xpath = './/*[contains(text(),"'+ q +'")]'
 
-                matchedList = tree.xpath(xpath)
-                # print len(matchedList)
-                for word in matchedList:
-                    # copy the base
-                    item = baseitem.copy()
+                if exact_match:
+                    xpath = './/*[text()[contains(normalize-space(.),"' + q + '")]]'
+                    matchedList = tree.xpath(xpath)
+                    result = self.prepare_results(q, matchedList, hit, exact_match)
+                else:
+                    remove_tashkel_from_query = re.compile(ur'[\u064B-\u065f|\u0640]',re.UNICODE)
+                    q_without_tashkel = remove_tashkel_from_query.sub('', q)
 
-                    # print word
-                    # print word.getparent()
-                    item['baseCfi'] = cfiBase
-                    item['cfi'] = getCFI(cfiBase, word)
-                    #print cfi
+                    xpath = u'.//*[text()[contains(translate(normalize-space(.),"ًٌٍَُِّْـ",""),"'+ q_without_tashkel +'")]]'
+                    matchedList = tree.xpath(xpath)
+                    result = self.prepare_results(q, matchedList, hit, exact_match)
 
-                    # Create highlight snippet in try / except
-                    # because I'm not convinced its error free for all
-                    # epub texts
-                    try:
-                        item['highlight'] = createHighlight(word.text, q) # replace me with above
-                    except Exception as e:
-                        print "Exception when creating highlight for query", q
-                        print(e)
-                        item['highlight'] = ''
-
-                    #item['highlight'] = word.text
-                    r["results"].append(item)
-
+                r["matched_words"]  = r["matched_words"]  | result['matched_words']
+                r["results"].extend(result['results'])
         ## Sort results by chapter
+        r['matched_words'] = list(r['matched_words'])
         r['results'] = sorted(r['results'], key=lambda x: getCFIChapter(x['baseCfi']))
         return r
 
 
 def getCFI(cfiBase, word):
-
     cfi_list = []
     parent = word.getparent()
     child = word
@@ -102,15 +145,12 @@ def getCFIChapter(cfiBase):
     chapter_location = cfiBase[cfiBase.rfind('/')+1:cfiBase.find('!')]
     return int(chapter_location)
 
-def createHighlight(text, query):
+def createHighlight(text, start_index, end_index):
     tag = "<b class='match'>"
     closetag = "</b>"
-    offset = len(query)
-
-    leading_text = trimLength(text[:text.lower().find(query)],-10) + tag
-    word = text[text.lower().find(query):text.lower().find(query)+offset]
-    ending_text = closetag + trimLength(text[text.lower().find(query)+offset:],10)
-
+    leading_text = trimLength(text[:start_index],-10) + tag
+    word = text[start_index:end_index]
+    ending_text = closetag + trimLength(text[end_index:],10)
     return leading_text + word + endWithPeriods(ending_text)
 
 def trimLength(text, words):
