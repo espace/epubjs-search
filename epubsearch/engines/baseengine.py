@@ -1,5 +1,5 @@
 class BaseEngine(object):
-    
+
     database = ''
 
     def __init__(self, databaseName="epubdb"):
@@ -29,14 +29,14 @@ class BaseEngine(object):
         '''
         pass
 
-    def add(self, path='', href='', title='', cfiBase='', spinePos=''): 
+    def add(self, path='', href='', title='', cfiBase='', spinePos=''):
         '''
         Called to load a single document from the spine
             - path = Relative path to the chapter
             - href = URL to chapter from the manifest
             - title = Title from the TOC
             - cfiBase = Chapter Base of the EPUBCFI
-            - spinePos = position in the book (starting at 1) 
+            - spinePos = position in the book (starting at 1)
         '''
         pass
 
@@ -48,7 +48,7 @@ class BaseEngine(object):
 
     def query(self, q, limit=None):
         '''
-        Returns a List of results containing Dicts with the following keys: 
+        Returns a List of results containing Dicts with the following keys:
             title
             href
             path
@@ -57,7 +57,7 @@ class BaseEngine(object):
             spinePos
         '''
         results = []
-        
+
         hit = [] # replace with DB query
 
         for hit in hits:
