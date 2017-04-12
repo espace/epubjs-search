@@ -6,22 +6,6 @@ from lxml import etree
 import re
 from pyarabic import araby
 
-def human_xpath(element):
-    full_xpath = element.getroottree().getpath(element)
-    xpath = ''
-    human_xpath = ''
-    for i, node in enumerate(full_xpath.split('/')[1:]):
-        xpath += '/' + node
-        element = element.xpath(xpath)[0]
-        namespace, tag = element.tag[1:].split('}', 1)
-        if element.getparent() is not None:
-            nsmap = {'ns': namespace}
-            same_name = element.getparent().xpath('./ns:' + tag, namespaces=nsmap)
-            if len(same_name) > 1:
-                tag += '[{}]'.format(same_name.index(element) + 1)
-        human_xpath += '/' + tag
-    return human_xpath
-
 class EpubIndexer(object):
     epub = False
     engine = False
@@ -122,47 +106,3 @@ class EpubIndexer(object):
         r['matched_words'] = list(r['matched_words'])
         r['results'] = sorted(r['results'], key=lambda x: getCFIChapter(x['baseCfi']))
         return r
-
-
-def getCFI(cfiBase, word):
-    cfi_list = []
-    parent = word.getparent()
-    child = word
-    while parent is not None:
-        i = parent.index(child)
-        if 'id' in child.attrib:
-            cfi_list.insert(0,str((i+1)*2)+'[' + child.attrib['id'] + ']')
-        else:
-            cfi_list.insert(0,str((i+1)*2))
-        child = parent
-        parent = child.getparent()
-
-    cfi = cfiBase + '/' + '/'.join(cfi_list)
-    return cfi
-
-def getCFIChapter(cfiBase):
-    cfiBase = re.sub(r'\[.*\]','',cfiBase)
-    chapter_location = cfiBase[cfiBase.rfind('/')+1:cfiBase.find('!')]
-    return int(chapter_location)
-
-def createHighlight(text, start_index, end_index):
-    tag = "<b class='match'>"
-    closetag = "</b>"
-    leading_text = trimLength(text[:start_index],-10) + tag
-    word = text[start_index:end_index]
-    ending_text = closetag + trimLength(text[end_index:],10)
-    return leading_text + word + endWithPeriods(ending_text)
-
-def trimLength(text, words):
-    if words > 0:
-        text_list = text.split(' ')[:words]
-    else:
-        text_list = text.split(' ')[words:]
-
-    return ' '.join(text_list)
-
-def endWithPeriods(text):
-    if text[-1] not in '!?.':
-        return text + ' ...'
-    else:
-        return text
