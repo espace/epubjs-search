@@ -1,9 +1,18 @@
+# -*- coding: utf-8 -*-
 from pyarabic import araby
+from lxml import etree
+import re
 
 class EpubResult(object):
-    """Contains method that return results from document"""
+    """Used to take results from engine and return it as json with more data"""
 
     def __init__(self, matched_documents, query, exact_match=False):
+        """
+            Intiliaze EpubResult object with arguments:
+            - matched_documents : documents matched through whoosh engine (Mandatory)
+            - query : query used for search (Mandatory)
+            - exact_match : boolean flag for exact_match (Optional, default: False)s
+        """
         self.matched_documents = matched_documents
         self.query = query
         self.exact_match = exact_match
@@ -11,38 +20,47 @@ class EpubResult(object):
             self.normalize_query()
 
     def normalize_query(self):
+        """
+            Normalize query string by removing diacritics (tashkel) and tatweel
+        """
         self.query = araby.strip_tashkeel(self.query) # remove tashkel
         self.query = araby.strip_tatweel(self.query) # remove tatweel
 
     def match_with_xpath(self, document_path):
+        """
+            Search in matched document with xpath to get elements contains results
+        """
         if self.exact_match:
             xpath = './/*[text()[contains(normalize-space(.),"' + self.query + '")]]'
         else:
-            xpath = u'.//*[text()[contains(translate(normalize-space(.),"ًٌٍَُِّْـ",""),"'+ q_without_tashkel +'")]]'
+            xpath = u'.//*[text()[contains(translate(normalize-space(.),"ًٌٍَُِّْـ",""),"'+ self.query +'")]]'
         tree = etree.parse(open(document_path))
         matchedList = tree.xpath(xpath)
+        return matchedList
 
-    def get_all_occurences_results_in_element(self, result_base, matched_element):
-        word_all_text = "".join(matched_element.itertext())
-        if word_all_text is None: continue
-
-        word_text = etree.tostring(word, encoding="utf-8", method="text", pretty_print=True ).replace('\n', ' ')
+    def get_results_in_element(self, result_base, matched_element):
+        """ Get all occurences inside matched element"""
+        r = {}
+        r['results'] = []
+        r['matched_words'] = set()
+        word_text = etree.tostring(matched_element, encoding="utf-8", method="text", pretty_print=True ).replace('\n', ' ')
         word_text = " ".join(word_text.split())
 
-        if exact_match:
+        if word_text is None: return r
+
+        if self.exact_match:
             regex = u"(?<![أ-ي\d])"+ q + u"(?![أ-ي\d])(?![" + u"".join(araby.TASHKEEL) + u"][أ-ي])"
             all_occurrences = re.finditer(r'('+regex+')' , word_all_text+' ')
         else:
-            generate_regex_from_query = re.sub(ur'([\u0621-\u064A])', ur'\1[\u064B-\u0652|\u0640]*', q)
+            generate_regex_from_query = re.sub(ur'([\u0621-\u064A])', ur'\1[\u064B-\u0652|\u0640]*', self.query)
             all_occurrences = re.finditer('('+generate_regex_from_query+')', word_text.decode('utf-8'))
 
         for word_match in all_occurrences:
             # copy the base
-            item = baseitem.copy()
-            item['baseCfi'] = cfiBase
+            item = result_base.copy()
             matched_word_index = ("/1:" + str(word_match.start()))
-            item['cfi'] = getCFI(cfiBase, word) + matched_word_index
-            item['xpath'] = human_xpath(word)
+            item['cfi'] = getCFI(item['baseCfi'], matched_element) + matched_word_index
+            item['xpath'] = human_xpath(matched_element)
             # Create highlight snippet in try / except
             # because I'm not convinced its error free for all
             # epub texts
@@ -60,22 +78,23 @@ class EpubResult(object):
         return r
 
     def get_results(self):
-        return_json = {}
-        return_json["results"] = []
-        return_json["matched_words"] = set()
+        """ Return results as JSON object"""
+        result_json = {}
+        result_json["results"] = []
+        result_json["matched_words"] = set()
 
         for document in self.matched_documents:
             matched_elements = self.match_with_xpath(document['path'])
             for matched_element in matched_elements:
                 result_base = {'title': document['title'], 'href':  document['href'], 'baseCfi': document['cfiBase'] + "!"}
-                all_occurrences_in_element = get_all_occurences_results_in_element(result_base, matched_element)
+                results = self.get_results_in_element(result_base, matched_element)
+                result_json["matched_words"]  = result_json["matched_words"]  | results['matched_words']
+                result_json["results"].extend(results['results'])
 
-            result = self.prepare_results(q, matchedList, hit, exact_match)
-            return_json["matched_words"]  = return_json["matched_words"]  | result['matched_words']
-            return_json["results"].extend(result['results'])
-
-        return_json['matched_words'] = list(return_json['matched_words'])
-        return_json['results'] = sorted(return_json['results'], key=lambda x: getCFIChapter(x['baseCfi']))
+        result_json['matched_words'] = list(result_json['matched_words'])
+        result_json['total'] = len(result_json['results'])
+        result_json['results'] = sorted(result_json['results'], key=lambda x: getCFIChapter(x['baseCfi']))
+        return result_json
 
 
 
