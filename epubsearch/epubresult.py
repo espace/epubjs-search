@@ -6,16 +6,17 @@ import re
 class EpubResult(object):
     """Used to take results from engine and return it as json with more data"""
 
-    def __init__(self, matched_documents, query, exact_match=False):
+    def __init__(self, matched_documents, query, exact_match=False, with_word_source=False):
         """
             Intiliaze EpubResult object with arguments:
             - matched_documents : documents matched through whoosh engine (Mandatory)
             - query : query used for search (Mandatory)
-            - exact_match : boolean flag for exact_match (Optional, default: False)s
+            - exact_match : boolean flag for exact_match (Optional, default: False)
         """
         self.matched_documents = matched_documents
         self.query = query
         self.exact_match = exact_match
+        self.with_word_source = with_word_source
         if not exact_match:
             self.normalize_query()
 
@@ -30,7 +31,7 @@ class EpubResult(object):
         """
             Search in matched document with xpath to get elements contains results
         """
-        if self.exact_match:
+        if self.with_word_source or self.exact_match:
             xpath = './/*[text()[contains(normalize-space(.),"' + self.query + '")]]'
         else:
             xpath = u'.//*[text()[contains(translate(normalize-space(.),"ًٌٍَُِّْـ",""),"'+ self.query +'")]]'
@@ -43,17 +44,18 @@ class EpubResult(object):
         r = {}
         r['results'] = []
         r['matched_words'] = set()
-        word_text = etree.tostring(matched_element, encoding="utf-8", method="text", pretty_print=True ).replace('\n', ' ')
-        word_text = " ".join(word_text.split())
-
+        result_base['matched_word'] = self.query
+        word_text = etree.tostring(matched_element, encoding="UTF-8", method="text", pretty_print=True ).replace('\n', ' ')
+        
+        word_text = " ".join(word_text.split()).decode('utf-8')
         if word_text is None: return r
 
-        if self.exact_match:
-            regex = u"(?<![أ-ي\d])"+ q + u"(?![أ-ي\d])(?![" + u"".join(araby.TASHKEEL) + u"][أ-ي])"
-            all_occurrences = re.finditer(r'('+regex+')' , word_all_text+' ')
+        if self.with_word_source or self.exact_match:
+            regex = u"(?<![أ-ي\d])"+ self.query + u"(?![أ-ي\d])(?![" + u"".join(araby.TASHKEEL) + u"][أ-ي])"
+            all_occurrences = re.finditer(r'('+regex+')' , word_text +' ')
         else:
             generate_regex_from_query = re.sub(ur'([\u0621-\u064A])', ur'\1[\u064B-\u0652|\u0640]*', self.query)
-            all_occurrences = re.finditer('('+generate_regex_from_query+')', word_text.decode('utf-8'))
+            all_occurrences = re.finditer('('+generate_regex_from_query+')', word_text+ ' ')
 
         for word_match in all_occurrences:
             # copy the base
@@ -66,9 +68,9 @@ class EpubResult(object):
             # epub texts
             r['matched_words'].add(word_match.group(1))
             try:
-                item['highlight'] = createHighlight(word_text.decode('utf-8'), word_match.start(), word_match.end()) # replace me with above
+                item['highlight'] = createHighlight(word_text, word_match.start(), word_match.end()) # replace me with above
             except Exception as e:
-                print "Exception when creating highlight for query", q
+                print "Exception when creating highlight for query", self.query
                 print(e)
                 print word_text
                 item['highlight'] = ''
@@ -84,12 +86,24 @@ class EpubResult(object):
         result_json["matched_words"] = set()
 
         for document in self.matched_documents:
-            matched_elements = self.match_with_xpath(document['path'])
-            for matched_element in matched_elements:
-                result_base = {'title': document['title'], 'href':  document['href'], 'baseCfi': document['cfiBase'] + "!"}
-                results = self.get_results_in_element(result_base, matched_element)
-                result_json["matched_words"]  = result_json["matched_words"]  | results['matched_words']
-                result_json["results"].extend(results['results'])
+            result_base = {'title': document['title'], 'href':  document['href'], 'baseCfi': document['cfiBase'] + "!"}
+            if self.with_word_source:
+                get_keywords_regex = r'<b class="match .*?">(.*?)<\/b>'
+                keywords = [m.group(1) for m in re.finditer(r''+get_keywords_regex+'' , unicode(document['html_highlighted']))]
+                keywords = set(keywords)
+                result_json["matched_words"]  = result_json["matched_words"]  | keywords
+                for keyword in keywords:
+                    self.query = keyword
+                    matched_elements = self.match_with_xpath(document['path'])
+                    for matched_element in matched_elements:
+                        results = self.get_results_in_element(result_base, matched_element)
+                        result_json["results"].extend(results['results'])
+            else:
+                matched_elements = self.match_with_xpath(document['path'])
+                for matched_element in matched_elements:
+                    results = self.get_results_in_element(result_base, matched_element)
+                    result_json["matched_words"]  = result_json["matched_words"]  | results['matched_words']
+                    result_json["results"].extend(results['results'])
 
         result_json['matched_words'] = list(result_json['matched_words'])
         result_json['total'] = len(result_json['results'])
