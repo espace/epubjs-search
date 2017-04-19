@@ -4,7 +4,12 @@ from lxml import etree
 import re
 
 class EpubResult(object):
-    """Used to take results from engine and return it as json with more data"""
+    """
+        This class responseable for process results returned form search engine(whoosh)
+        to get more information we do it into 2 steps and thoese are the main purpuse for each step:
+        1- Get every element contains query in each matched document using xpath
+        2- Get the start index of each matched word in the matched elements
+    """
 
     def __init__(self, matched_documents, query, exact_match=False, with_word_source=False):
         """
@@ -12,6 +17,7 @@ class EpubResult(object):
             - matched_documents : documents matched through whoosh engine (Mandatory)
             - query : query used for search (Mandatory)
             - exact_match : boolean flag for exact_match (Optional, default: False)
+            - with_word_source : boolean flag to enable search with word source(Gazr)
         """
         self.matched_documents = matched_documents
         self.query = query
@@ -46,7 +52,7 @@ class EpubResult(object):
         r['matched_words'] = set()
         result_base['matched_word'] = self.query
         word_text = etree.tostring(matched_element, encoding="UTF-8", method="text", pretty_print=True ).replace('\n', ' ')
-        
+
         word_text = " ".join(word_text.split()).decode('utf-8')
         if word_text is None: return r
 
