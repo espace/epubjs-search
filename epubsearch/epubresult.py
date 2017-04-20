@@ -17,7 +17,7 @@ class EpubResult(object):
             - matched_documents : documents matched through whoosh engine (Mandatory)
             - query : query used for search (Mandatory)
             - exact_match : boolean flag for exact_match (Optional, default: False)
-            - with_word_source : boolean flag to enable search with word source(Gazr)
+            - with_word_stem : boolean flag to enable search with word steam
         """
         self.matched_documents = matched_documents
         self.query = query
