@@ -27,7 +27,7 @@ class EpubIndexer(object):
 
         self.engine.finished()
 
-    def search(self, q, limit=None, exact_match=False, with_word_source=False):
+    def search(self, q, limit=None, exact_match=False, with_word_stem=False):
         rawresults = self.engine.query(q, limit)
-        results = EpubResult(rawresults, q, exact_match, with_word_source).get_results()
+        results = EpubResult(rawresults, q, exact_match, with_word_stem).get_results()
         return results

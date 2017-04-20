@@ -6,7 +6,7 @@ import re
 class EpubResult(object):
     """Used to take results from engine and return it as json with more data"""
 
-    def __init__(self, matched_documents, query, exact_match=False, with_word_source=False):
+    def __init__(self, matched_documents, query, exact_match=False, with_word_stem=False):
         """
             Intiliaze EpubResult object with arguments:
             - matched_documents : documents matched through whoosh engine (Mandatory)
@@ -16,7 +16,7 @@ class EpubResult(object):
         self.matched_documents = matched_documents
         self.query = query
         self.exact_match = exact_match
-        self.with_word_source = with_word_source
+        self.with_word_stem = with_word_stem
         if not exact_match:
             self.normalize_query()
 
@@ -31,7 +31,7 @@ class EpubResult(object):
         """
             Search in matched document with xpath to get elements contains results
         """
-        if self.with_word_source or self.exact_match:
+        if self.with_word_stem or self.exact_match:
             xpath = './/*[text()[contains(normalize-space(.),"' + self.query + '")]]'
         else:
             xpath = u'.//*[text()[contains(translate(normalize-space(.),"ًٌٍَُِّْـ",""),"'+ self.query +'")]]'
@@ -50,7 +50,7 @@ class EpubResult(object):
         word_text = " ".join(word_text.split()).decode('utf-8')
         if word_text is None: return r
 
-        if self.with_word_source or self.exact_match:
+        if self.with_word_stem or self.exact_match:
             regex = u"(?<![أ-ي\d])"+ self.query + u"(?![أ-ي\d])(?![" + u"".join(araby.TASHKEEL) + u"][أ-ي])"
             all_occurrences = re.finditer(r'('+regex+')' , word_text +' ')
         else:
@@ -87,7 +87,7 @@ class EpubResult(object):
 
         for document in self.matched_documents:
             result_base = {'title': document['title'], 'href':  document['href'], 'baseCfi': document['cfiBase'] + "!"}
-            if self.with_word_source:
+            if self.with_word_stem:
                 get_keywords_regex = r'<b class="match .*?">(.*?)<\/b>'
                 keywords = [m.group(1) for m in re.finditer(r''+get_keywords_regex+'' , unicode(document['html_highlighted']))]
                 keywords = set(keywords)

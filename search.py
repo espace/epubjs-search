@@ -24,12 +24,12 @@ def search():
     query       = request.args.get('q')
     book_id     = request.args.get('id')
     exact_match = request.args.get('exact_match')
-    with_word_source = request.args.get('with_word_source')
+    with_word_stem = request.args.get('with_word_stem')
     index_path  = os.path.join('databases', book_id)
 
     if(os.path.isdir(index_path) and len(query) >= 3):
         index   = EpubIndexer("whoosh", book_id)
-        results = index.search(query, exact_match=exact_match, with_word_source=with_word_source)
+        results = index.search(query, exact_match=exact_match, with_word_stem=with_word_stem)
         return jsonify(**results)
 
     return jsonify(results=[])
